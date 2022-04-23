@@ -40,22 +40,11 @@
     <hudson.tasks.Shell>
       <command>cd app_server
 mvn clean install
+docker login
+docker build . -t tombatchelor/carsdemo:$GIT_COMMIT
+docker push tombatchelor/carsdemo:$GIT_COMMIT
 </command>
     </hudson.tasks.Shell>
-    <com.nirima.jenkins.plugins.docker.builder.DockerBuilderPublisher plugin="docker-plugin@1.1.9">
-      <dockerFileDirectory>app_server</dockerFileDirectory>
-      <fromRegistry plugin="docker-commons@1.16"/>
-      <tags>
-        <string>tombatchelor/carsdemo:$GIT_COMMIT</string>
-      </tags>
-      <pushOnSuccess>true</pushOnSuccess>
-      <pushCredentialsId>TomDocker</pushCredentialsId>
-      <cleanImages>true</cleanImages>
-      <cleanupWithJenkinsJobDelete>false</cleanupWithJenkinsJobDelete>
-      <cloud>docker</cloud>
-      <noCache>false</noCache>
-      <pull>false</pull>
-    </com.nirima.jenkins.plugins.docker.builder.DockerBuilderPublisher>
     <hudson.tasks.Shell>
       <command>kubectl apply -f - &lt;&lt;EOF
 apiVersion: apps/v1
@@ -86,11 +75,6 @@ spec:
         - name: cars-app-port
           containerPort: 8080
         env:
-        - name: OBSREVE_NAMESPACE
-          valueFrom:
-            configMapKeyRef:
-              name: proxy-config
-              key: observe.namespace
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
@@ -111,6 +95,11 @@ spec:
             configMapKeyRef:
               name: aws
               key: rating.endpoint
+        - name: ZIPKIN_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: zipkin-config
+              key: zipkin.endpoint
         - name: POD_NAME
           valueFrom:
             fieldRef:
@@ -125,6 +114,21 @@ spec:
             secretKeyRef:
               name: db-connection
               key: database.password
+        - name: OBSERVE_CUSTOMER
+          valueFrom:
+            secretKeyRef:
+              name: credentials
+              key: OBSERVE_CUSTOMER
+        - name: OBSERVE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: credentials
+              key: OBSERVE_TOKEN
+        - name: OBSERVE_COLLECTOR_HOST
+          valueFrom:
+            secretKeyRef:
+              name: credentials
+              key: OBSERVE_COLLECTOR_HOST
         livenessProbe:
           httpGet:
             path: /Cars_Sample_App/public/health
@@ -155,6 +159,8 @@ spec:
                 operator: NotIn
                 values:
                 - yolo
+      imagePullSecrets:
+      - name: dockerauth
 ---
 apiVersion: v1
 kind: Service
@@ -177,7 +183,7 @@ sleep 90
 export GIT_COMMIT_EMAIL=&quot;`git log --format=%ae -n 1`&quot;
 export GIT_COMMIT_SUBJECT=&quot;`git log --format=%s -n 1`&quot;
 echo $GIT_COMMIT_NAME
-curl -X POST $PROXY_ENDPOINT/v1/observations/jenkins -H &apos;Content-Type: application/json&apos; -H &quot;$AUTH&quot; -d &apos;{&quot;BUILD_NUMBER&quot;:&quot;&apos;$BUILD_NUMBER&apos;&quot;,&quot;BUILD_ID&quot;:&quot;&apos;$BUILD_ID&apos;&quot;,&quot;JOB_NAME&quot;:&quot;&apos;$JOB_NAME&apos;&quot;,&quot;GIT_COMMIT&quot;:&quot;&apos;$GIT_COMMIT&apos;&quot;,&quot;GIT_BRANCH&quot;:&quot;&apos;$GIT_BRANCH&apos;&quot;,&quot;GIT_COMMITTER_NAME&quot;:&quot;&apos;&quot;$GIT_COMMIT_NAME&quot;&apos;&quot;,&quot;GIT_COMMITTER_EMAIL&quot;:&quot;&apos;&quot;$GIT_COMMIT_EMAIL&quot;&apos;&quot;,&quot;GIT_COMMIT_SUBJECT&quot;:&quot;&apos;&quot;$GIT_COMMIT_SUBJECT&quot;&apos;&quot;,&quot;IMAGE&quot;:&quot;&apos;tombatchelor/carsdemo:$GIT_COMMIT&apos;&quot;,&quot;BUILD_STATUS&quot;:&quot;SUCCESS&quot;}&apos;</command>
+curl -X POST https://$OBSERVE_CUSTOMER:&quot;$OBSERVE_TOKEN&quot;@$OBSERVE_COLLECTOR_HOST/v1/http/jenkins -H &apos;Content-Type: application/json&apos; -H &quot;$AUTH&quot; -d &apos;{&quot;BUILD_NUMBER&quot;:&quot;&apos;$BUILD_NUMBER&apos;&quot;,&quot;BUILD_ID&quot;:&quot;&apos;$BUILD_ID&apos;&quot;,&quot;JOB_NAME&quot;:&quot;&apos;$JOB_NAME&apos;&quot;,&quot;GIT_COMMIT&quot;:&quot;&apos;$GIT_COMMIT&apos;&quot;,&quot;GIT_BRANCH&quot;:&quot;&apos;$GIT_BRANCH&apos;&quot;,&quot;GIT_COMMITTER_NAME&quot;:&quot;&apos;&quot;$GIT_COMMIT_NAME&quot;&apos;&quot;,&quot;GIT_COMMITTER_EMAIL&quot;:&quot;&apos;&quot;$GIT_COMMIT_EMAIL&quot;&apos;&quot;,&quot;GIT_COMMIT_SUBJECT&quot;:&quot;&apos;&quot;$GIT_COMMIT_SUBJECT&quot;&apos;&quot;,&quot;IMAGE&quot;:&quot;&apos;tombatchelor/carsdemo:$GIT_COMMIT&apos;&quot;,&quot;BUILD_STATUS&quot;:&quot;SUCCESS&quot;}&apos;</command>
     </hudson.tasks.Shell>
   </builders>
   <buildWrappers>

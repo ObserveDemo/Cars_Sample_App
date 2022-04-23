@@ -7,12 +7,7 @@ package com.supercars.externaldata;
 
 import brave.Tracing;
 import brave.jaxrs2.TracingClientFilter;
-import com.supercars.preferences.Preference;
-import com.supercars.preferences.PreferenceException;
-import com.supercars.preferences.PreferenceManager;
 import com.supercars.tracing.TracingHelper;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.ws.rs.client.Client;
@@ -39,32 +34,17 @@ public class FuelPrices {
 
     static FuelPrices prices = null;
     static long lastUpdate = 0l;
-    static int timeout = 0;
+    static int timeout = 30 * 60 * 1000; // 30 minutes
 
     static Tracing tracing = TracingHelper.getTracing(TracingHelper.FUEL_PRICES_NAME);
 
     private final static Logger logger = Logger.getLogger(FuelPrices.class.getName());
-    
+
     public static FuelPrices getFuelPrices() {
         try {
-            if (timeout == 0) {
-                timeout = Integer.parseInt(PreferenceManager.getPreference("FUEL_CACHE_TIMEOUT").getValue());
-                timeout = timeout * 60 * 1000;
-            }
-            if (prices == null || lastUpdate + timeout > System.currentTimeMillis()) {
-                logger.fine("Getting fresh fuel prices");
-                Preference preference = PreferenceManager.getPreference("REST_CLIENT");
-                switch (preference.getValue()) {
-                    case "Jersey_Sync":
-                        prices = getFuelPricesJerseySync();
-                        break;
-                    case "Jersey_Async":
-                        prices = getFuelPriceJerseysAsync().get();
-                        break;
-                }
-                logger.fine("Fuel prices refreshed");
-            }
-        } catch (PreferenceException | InterruptedException | ExecutionException ex) {
+            prices = getFuelPricesJerseySync();
+            logger.fine("Fuel prices refreshed");
+        } catch (Exception ex) {
             logger.log(Level.SEVERE, null, ex);
         }
 
@@ -78,14 +58,6 @@ public class FuelPrices {
         target.register(TracingClientFilter.create(tracing));
         return target.request(MediaType.APPLICATION_XML)
                 .get(FuelPrices.class);
-    }
-
-    private static Future<FuelPrices> getFuelPriceJerseysAsync() {
-        logger.fine("Using async HTTP call");
-        Client client = ClientBuilder.newClient();
-        WebTarget target = client.target("https://www.fueleconomy.gov/ws/rest/fuelprices");
-        Future<FuelPrices> response = target.request(MediaType.APPLICATION_XML).async().get(FuelPrices.class);
-        return response;
     }
 
     /**
