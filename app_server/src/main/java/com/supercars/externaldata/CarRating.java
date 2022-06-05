@@ -40,9 +40,12 @@ public class CarRating {
         Car car = new CarDataLoader().getCar(carID);
         Manufacturer manufacturer = car.getManufacturer();
         logger.log(Level.FINE, "Getting rating for carID: {0} manufacturerID: {1}", new Object[]{carID, manufacturer.getManufacturerId()});
-        RatingRequest ratingRequest = new RatingRequest(manufacturer.getManufacturerId());
+        RatingRequest ratingRequest = new RatingRequest(manufacturer.getManufacturerId(), TracingHelper.getTraceID());
         try {
             rating = getCarRatingSync(ratingRequest);
+            if (rating.getRating() == 0) {
+                throw new Exception("Error getting car rating, requestID: " + rating.getErrorMessage());
+            }
             logger.log(Level.FINE, "Success getting rating for carID: {0}", carID);
         } catch (Exception ex) {
             logger.log(Level.SEVERE, "Error getting rating for carID: " + carID + " manufacturerID: " + manufacturer.getManufacturerId(), ex);
