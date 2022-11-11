@@ -18,7 +18,9 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import com.supercars.Car;
+import com.supercars.Leak;
 import com.supercars.dataloader.CarDataLoader;
+import com.supercars.dataloader.DataLoaderException;
 import com.supercars.externaldata.CarRating;
 import com.supercars.externaldata.S3Images;
 import com.supercars.externaldata.Zendesk;
@@ -26,6 +28,7 @@ import com.supercars.tracing.TracingHelper;
 import com.supercars.usermanagement.UserManager;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.zip.DataFormatException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Random;
@@ -49,7 +52,7 @@ public class CarService {
     @Path("{id}")
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getCar(@PathParam("id") int carID,  @javax.ws.rs.core.Context HttpServletRequest request) {
+    public Response getCar(@PathParam("id") int carID, @javax.ws.rs.core.Context HttpServletRequest request) {
         logger.log(Level.FINE, "GET request for carID: {0}", Integer.toString(carID));
         Car car = new CarDataLoader().getCar(carID);
 
@@ -70,19 +73,6 @@ public class CarService {
 
         car.setRating(rating);
 
-        try {
-            Random random = new Random();
-            if (!HealthService.isHealthy() && random.nextInt(4) == 1) {
-                String username = UserManager.getUserForSession(request.getSession()).getUsername();
-                if (random.nextInt(4) == 1)
-                    Zendesk.sendZendeskTicket(username, car.getManufacturer().getName());
-                throw new OutOfMemoryError("Out of Memory");
-            }
-        } catch (OutOfMemoryError ex) {
-            logger.log(Level.SEVERE, ex.getMessage(), ex);
-            return Response.status(503).build();
-        }
-
         logger.log(Level.FINE, "Returing car {0}", car.toString());
 
         try {
@@ -98,7 +88,7 @@ public class CarService {
     @Path("/manufacturer/{id}")
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public List<Car> getCarsForManufacturer(@PathParam("id") int id) {
+    public Response getCarsForManufacturer(@PathParam("id") int id, @javax.ws.rs.core.Context HttpServletRequest request) throws DataLoaderException {
         logger.log(Level.FINE, "GET request for cars for manufacturerID: {0}", Integer.toString(id));
         List<Car> cars = new CarDataLoader().getCarsByManufacturer(id);
 
@@ -110,10 +100,35 @@ public class CarService {
             }
         }
         // Add number of cars to span
-        TracingHelper.tag(TracingHelper.CARS_APP_NAME, "supercars.CarCount", cars.size());
+        int carCount = cars.size();
+
+        try {
+            Random random = new Random();
+            if (Leak.shouldKill()) {
+                carCount = carCount * 50;
+                TracingHelper.tag(TracingHelper.CARS_APP_NAME, "supercars.CarCount", carCount);
+                Leak.addToCollection(1000,10000);
+                String username = UserManager.getUserForSession(request.getSession()).getUsername();
+                if (random.nextInt(4) == 1)
+                    Zendesk.sendZendeskTicket(username);
+                throw new DataLoaderException("Error decoding cars array");
+            } else {
+                TracingHelper.tag(TracingHelper.CARS_APP_NAME, "supercars.CarCount", carCount);
+            }
+        } catch (DataLoaderException ex) {
+            logger.log(Level.SEVERE, ex.getMessage(), ex);
+            return Response.status(503).build();
+        }
 
         logger.log(Level.FINE, "Returning {0} cars for manufacturerID: {1}", new Object[]{Integer.toString(cars.size()), Integer.toString(id)});
-        return cars;
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            String json = mapper.writeValueAsString(cars);
+            return Response.ok(json, MediaType.APPLICATION_JSON).build();
+        } catch (JsonProcessingException ex) {
+            logger.log(Level.SEVERE, ex.getMessage(), ex);
+            return Response.status(503).build();
+        }
     }
 
     @Path("{query}")

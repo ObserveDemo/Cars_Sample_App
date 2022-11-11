@@ -6,6 +6,9 @@
 package com.supercars.tracing;
 
 import com.supercars.logging.SessionIDHolder;
+import com.supercars.usermanagement.User;
+import com.supercars.usermanagement.UserManager;
+
 import java.io.IOException;
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
@@ -27,13 +30,15 @@ public class ObserveTagFilter implements Filter {
     }
 
     @Override
-    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
         if (System.getenv("POD_NAME") != null) {
             TracingHelper.tag(TracingHelper.CARS_APP_NAME, "kubernetes.pod.name", System.getenv("POD_NAME"));
         }
         if (request instanceof HttpServletRequest) {
             HttpServletRequest httpServletRequest = (HttpServletRequest) request;
             String sessionID = httpServletRequest.getSession().getId();
+            User user = (User) httpServletRequest.getSession().getAttribute(UserManager.USER_ATTRIBUTE);
             TracingHelper.tag(TracingHelper.CARS_APP_NAME, "session.id", sessionID);
             SessionIDHolder.setSessionID(sessionID);
         }
